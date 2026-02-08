@@ -1,153 +1,168 @@
-# ICBHI 2017 Challenge
-## Respiratory Sound Database
+# ICBHI 2017 Challenge – Respiratory Sound Database
 
 ## Overview
-The **Respiratory Sound Database** was originally compiled to support the scientific challenge organized at the *International Conference on Biomedical Health Informatics (ICBHI) 2017*.  
-The current version is freely available for research and includes both the **public** and **private** datasets of the ICBHI Challenge.
+
+This repository/document describes the **Respiratory Sound Database** released in conjunction with the **ICBHI 2017 Challenge** (International Conference on Biomedical and Health Informatics).
+
+The database was compiled to support research on automatic respiratory sound analysis and is now **freely available for research purposes**. It includes both the **public and private datasets** used in the original challenge.
 
 ---
 
-## Data Collection
-Audio samples were collected independently by two research teams in two different countries over several years.
+## Dataset Description
 
-### Portugal
-- School of Health Sciences, University of Aveiro (ESSUA)
-- Respiratory Research and Rehabilitation Laboratory (Lab3R), ESSUA
-- Hospital Infante D. Pedro, Aveiro
+The Respiratory Sound Database contains audio recordings collected independently by two research teams across two countries over several years:
 
-### Greece
-- Aristotle University of Thessaloniki (AUTH)
-- University of Coimbra (UC)
-- Papanikolaou General Hospital, Thessaloniki
-- General Hospital of Imathia (Health Unit of Naousa)
+- **Portugal**  
+  - School of Health Sciences, University of Aveiro (ESSUA)  
+  - Respiratory Research and Rehabilitation Laboratory (Lab3R), ESSUA  
+  - Hospital Infante D. Pedro, Aveiro  
 
-Recordings were acquired using heterogeneous equipment and reflect real clinical environments, including high-noise conditions.
+- **Greece**  
+  - Aristotle University of Thessaloniki (AUTH)  
+  - University of Coimbra (UC)  
+  - Papanikolaou General Hospital, Thessaloniki  
+  - General Hospital of Imathia (Health Unit of Naousa)
 
----
+### Dataset Statistics
 
-## Dataset Statistics
-- **Total duration:** ~5.5 hours  
-- **Respiratory cycles:** 6,898  
-  - Crackles: 1,864  
-  - Wheezes: 886  
-  - Crackles + Wheezes: 506  
-- **Annotated recordings:** 920  
+- **Total duration:** ~5.5 hours of recordings  
+- **Audio samples:** 920 annotated recordings  
 - **Subjects:** 126  
-- **Recording length:** 10–90 seconds  
+- **Respiratory cycles:** 6,898 total  
+  - 1,864 with crackles  
+  - 886 with wheezes  
+  - 506 with both crackles and wheezes  
+
+Recordings vary in duration from **10s to 90s**, were acquired using **heterogeneous equipment**, and include **realistic noise levels** to reflect real-world clinical conditions.
 
 ---
 
 ## Annotations
-Respiratory cycles were annotated by respiratory experts as:
+
+Each respiratory cycle was annotated by respiratory experts with the following labels:
+
 - Crackles
 - Wheezes
-- Crackles and wheezes
+- Both crackles and wheezes
 - No adventitious sounds
 
 ### Annotation File Format
-Each annotation file contains four columns:
-1. Beginning of respiratory cycle(s)
-2. End of respiratory cycle(s)
-3. Crackles (`1` = present, `0` = absent)
-4. Wheezes (`1` = present, `0` = absent)
+
+Each annotation file contains **four columns**:
+
+1. Beginning of respiratory cycle (seconds)
+2. End of respiratory cycle (seconds)
+3. Crackles presence (1 = present, 0 = absent)
+4. Wheezes presence (1 = present, 0 = absent)
 
 ---
 
 ## File Naming Convention
-Each audio file name consists of **five underscore-separated fields**:
 
-1. **Patient number**  
-   `101, 102, ..., 226`
+Each audio filename consists of **five underscore-separated fields**:
 
-2. **Recording index**
+```
 
-3. **Chest location**
-   - `Tc` – Trachea  
-   - `Al` – Anterior left  
-   - `Ar` – Anterior right  
-   - `Pl` – Posterior left  
-   - `Pr` – Posterior right  
-   - `Ll` – Lateral left  
-   - `Lr` – Lateral right  
+PatientID_RecordingIndex_ChestLocation_AcquisitionMode_Equipment.wav
 
-4. **Acquisition mode**
-   - `sc` – Sequential / single channel  
-   - `mc` – Simultaneous / multichannel  
+```
 
-5. **Recording equipment**
-   - `AKGC417L` – AKG C417L Microphone  
-   - `LittC2SE` – 3M Littmann Classic II SE Stethoscope  
-   - `Litt3200` – 3M Littmann 3200 Electronic Stethoscope  
-   - `Meditron` – Welch Allyn Meditron Master Elite Electronic Stethoscope  
+### 1. Patient Number
+- Ranges from `101` to `226`
+
+### 2. Recording Index
+- Integer identifying the recording session
+
+### 3. Chest Location
+- `Tc` – Trachea  
+- `Al` – Anterior Left  
+- `Ar` – Anterior Right  
+- `Pl` – Posterior Left  
+- `Pr` – Posterior Right  
+- `Ll` – Lateral Left  
+- `Lr` – Lateral Right  
+
+### 4. Acquisition Mode
+- `sc` – Sequential / Single-channel  
+- `mc` – Simultaneous / Multi-channel  
+
+### 5. Recording Equipment
+- `AKGC417L` – AKG C417L Microphone  
+- `LittC2SE` – 3M Littmann Classic II SE  
+- `Litt3200` – 3M Littmann 3200 Electronic Stethoscope  
+- `Meditron` – Welch Allyn Meditron Master Elite  
 
 ---
 
-## Diagnosis Labels
-Diagnosis information is provided per subject.
+## Diagnostic Labels
 
-Abbreviations:
+Diagnostic information for each subject is provided separately.
+
+### Diagnosis Abbreviations
+
 - **COPD** – Chronic Obstructive Pulmonary Disease  
 - **LRTI** – Lower Respiratory Tract Infection  
 - **URTI** – Upper Respiratory Tract Infection  
 
 - Diagnosis file:  
   https://bhichallenge.med.auth.gr/sites/default/files/ICBHI_final_database/ICBHI_Challenge_diagnosis.txt
-- Train/test split:  
+
+- Train/test split file:  
   https://bhichallenge.med.auth.gr/sites/default/files/ICBHI_final_database/ICBHI_challenge_train_test.txt
 
 ---
 
-## Demographic Information
-Demographic metadata is provided with the following columns:
-1. Participant ID  
-2. Age  
-3. Sex  
-4. Adult BMI (kg/m²)  
-5. Child Weight (kg)  
-6. Child Height (cm)  
+## Additional Metadata
 
-`NA` indicates *Not Available*.
-
-- File:  
+- **Demographic information:**  
+  Participant ID, Age, Sex, Adult BMI (kg/m²), Child Weight (kg), Child Height (cm)  
   https://bhichallenge.med.auth.gr/sites/default/files/ICBHI_final_database/ICBHI_Challenge_demographic_information.txt
 
----
-
-## Download
-The dataset is **freely available for research**.
-
-- Full dataset (ZIP):  
-  https://bhichallenge.med.auth.gr/sites/default/files/ICBHI_final_database/ICBHI_final_database.zip
-- Browse files online:  
-  https://bhichallenge.med.auth.gr/node/51
-- Detailed respiratory events:  
+- **Detailed respiratory events:**  
   https://bhichallenge.med.auth.gr/sites/default/files/ICBHI_final_database/events.zip
 
 ---
 
-## Known File Naming Issue
-Due to a bug in an early release:
-- **92 files** had incorrect recording equipment identifiers.
+## Download
 
-The corrected filenames are included in the updated dataset.
+- **Full database (ZIP):**  
+  https://bhichallenge.med.auth.gr/sites/default/files/ICBHI_final_database/ICBHI_final_database.zip
 
-- Filename differences:  
+- **Browse files online:**  
+  https://bhichallenge.med.auth.gr/node/51
+
+---
+
+## Important Notice (Filename Correction)
+
+Due to a bug in an earlier release, **92 files contained incorrect recording equipment identifiers** in their filenames.
+
+- The **current version** of the database has corrected filenames.
+- Differences between old and corrected filenames:  
   https://bhichallenge.med.auth.gr/sites/default/files/ICBHI_final_database/filename_differences.txt
-
-If using an older version, replace the last 8 characters of affected filenames with `Meditron`, or use the provided bash script.
+- A bash script for automatic renaming is also provided by the authors.
 
 ---
 
 ## Citation
-If you use this database, **please cite**:
 
-> Rocha BM et al. (2019)  
-> *An open access database for the evaluation of respiratory sound classification algorithms*  
-> Physiological Measurement, 40, 035001
+Publications using this database **must cite** the following paper:
+
+> Rocha BM et al. (2019).  
+> *An open access database for the evaluation of respiratory sound classification algorithms.*  
+> Physiological Measurement, 40(3), 035001.
 
 ---
 
 ## Contact
-Feedback and comments are welcome:
 
-**Email:** icbhi_challenge@med.auth.gr
+Feedback and comments on the dataset are welcomed:
+
+- **Email:** icbhi_challenge@med.auth.gr
+
+---
+
+## License and Usage
+
+This database is **freely available for research purposes**.  
+Users are responsible for ensuring compliance with applicable ethical and institutional guidelines when using the data.
