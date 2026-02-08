@@ -451,10 +451,6 @@ def main():
     # Generate comprehensive markdown report and CSV files
     generate_markdown_report(stats, 'reports')
 
-    # Save similarity matrix
-    np.save('reports/similarity_matrix.npy', similarity_matrix)
-    print(f"Similarity matrix saved to 'reports/similarity_matrix.npy'")
-
     print("\nAnalysis complete!")
 
 
