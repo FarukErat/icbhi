@@ -27,12 +27,12 @@ SAMPLE_RATE = 22050  # Standard sample rate for audio processing
 
 # Windowing and augmentation configuration
 WINDOW_LENGTH = 2.0  # Fixed window length in seconds (matches ICBHI median)
-WINDOW_OVERLAP = 0.5  # 50% overlap for sliding windows
+WINDOW_OVERLAP = 0.0  # 0% overlap for sliding windows
 MIN_SEGMENT_LENGTH = 0.5  # Minimum segment length to process (seconds)
 
 # Augmentation settings for patients dataset
-ENABLE_AUGMENTATION = True
-AUGMENTATION_MULTIPLIER = 5  # Number of augmented versions per original segment
+ENABLE_AUGMENTATION = False  # Disable data augmentation
+AUGMENTATION_MULTIPLIER = 0  # No augmentation
 
 
 def extract_audio_features(audio_segment, sr=SAMPLE_RATE):
@@ -68,7 +68,7 @@ def extract_audio_features(audio_segment, sr=SAMPLE_RATE):
 
 def split_into_windows(audio, sr, window_length=WINDOW_LENGTH, overlap=WINDOW_OVERLAP):
     """
-    Split an audio segment into fixed-length overlapping windows.
+    Split an audio segment into fixed-length non-overlapping windows.
 
     Args:
         audio: Audio signal array
@@ -103,79 +103,17 @@ def split_into_windows(audio, sr, window_length=WINDOW_LENGTH, overlap=WINDOW_OV
     return windows
 
 
-def augment_audio(audio, sr, num_augmentations=AUGMENTATION_MULTIPLIER):
-    """
-    Apply data augmentation to an audio segment.
-
-    Augmentation techniques:
-    1. Pitch shifting
-    2. Time stretching
-    3. Adding noise
-    4. Volume variation
-
-    Returns:
-        List of augmented audio segments
-    """
-    augmented = []
-
-    for i in range(num_augmentations):
-        aug_audio = audio.copy()
-
-        # Randomly select augmentation type
-        aug_type = i % 5
-
-        if aug_type == 0:
-            # Pitch shift up
-            aug_audio = librosa.effects.pitch_shift(aug_audio, sr=sr, n_steps=np.random.uniform(1, 3))
-        elif aug_type == 1:
-            # Pitch shift down
-            aug_audio = librosa.effects.pitch_shift(aug_audio, sr=sr, n_steps=np.random.uniform(-3, -1))
-        elif aug_type == 2:
-            # Time stretch (speed up slightly)
-            stretch_rate = np.random.uniform(0.9, 0.95)
-            aug_audio = librosa.effects.time_stretch(aug_audio, rate=stretch_rate)
-            # Resample to original length
-            if len(aug_audio) > len(audio):
-                aug_audio = aug_audio[:len(audio)]
-            else:
-                aug_audio = np.pad(aug_audio, (0, len(audio) - len(aug_audio)))
-        elif aug_type == 3:
-            # Time stretch (slow down slightly)
-            stretch_rate = np.random.uniform(1.05, 1.1)
-            aug_audio = librosa.effects.time_stretch(aug_audio, rate=stretch_rate)
-            # Resample to original length
-            if len(aug_audio) > len(audio):
-                aug_audio = aug_audio[:len(audio)]
-            else:
-                aug_audio = np.pad(aug_audio, (0, len(audio) - len(aug_audio)))
-        elif aug_type == 4:
-            # Add white noise
-            noise_level = np.random.uniform(0.001, 0.005)
-            noise = np.random.randn(len(aug_audio)) * noise_level
-            aug_audio = aug_audio + noise
-
-        # Random volume adjustment
-        volume_factor = np.random.uniform(0.8, 1.2)
-        aug_audio = aug_audio * volume_factor
-
-        augmented.append(aug_audio)
-
-    return augmented
-
-
 def load_patients_healthy_sounds():
     """
     Load healthy sound segments from the patients dataset.
     Healthy sounds are those tagged with 'normal' in the diagnosis CSV files.
 
-    Applies:
-    - Fixed-length windowing to handle divergent segment lengths
-    - Data augmentation to increase sample count
+    Applies fixed-length windowing to handle divergent segment lengths.
+    Data augmentation is disabled.
     """
     healthy_segments = []
     original_count = 0
     windowed_count = 0
-    augmented_count = 0
 
     # Get all wav files in patients directory
     wav_files = glob.glob(os.path.join(PATIENTS_DIR, "*.wav"))
@@ -254,37 +192,14 @@ def load_patients_healthy_sounds():
                                     'augmentation_type': 'original',
                                     'features': features
                                 })
-
-                                # Apply augmentation if enabled
-                                if ENABLE_AUGMENTATION:
-                                    aug_audios = augment_audio(window_audio, sr)
-                                    aug_types = ['pitch_up', 'pitch_down', 'stretch_fast', 'stretch_slow', 'noise']
-
-                                    for aug_idx, aug_audio in enumerate(aug_audios):
-                                        aug_features = extract_audio_features(aug_audio, sr)
-                                        if aug_features is not None:
-                                            augmented_count += 1
-                                            healthy_segments.append({
-                                                'source': 'patients',
-                                                'file': file_id,
-                                                'start': orig_start + win_start,
-                                                'end': orig_start + win_end,
-                                                'original_start': orig_start,
-                                                'original_end': orig_end,
-                                                'original_duration': original_duration,
-                                                'augmented': True,
-                                                'augmentation_type': aug_types[aug_idx % len(aug_types)],
-                                                'features': aug_features
-                                            })
             except Exception as e:
                 print(f"Error processing {wav_path}: {e}")
 
     print(f"\nPatients dataset summary:")
     print(f"  Original segments: {original_count}")
     print(f"  After windowing: {windowed_count}")
-    print(f"  After augmentation: {augmented_count}")
     print(f"  Total segments: {len(healthy_segments)}")
-    return healthy_segments
+    return healthy_segments, original_count, windowed_count
 
 
 def load_icbhi_healthy_sounds():
@@ -369,7 +284,7 @@ def load_icbhi_healthy_sounds():
     print(f"  Original segments: {original_count}")
     print(f"  After windowing: {windowed_count}")
     print(f"  Total segments: {len(healthy_segments)}")
-    return healthy_segments
+    return healthy_segments, original_count, windowed_count
 
 
 def calculate_cosine_similarity(patients_segments, icbhi_segments):
@@ -515,10 +430,10 @@ def generate_markdown_report(stats, output_dir='reports'):
 
         # Dataset summary
         f.write("## Dataset Summary\n\n")
-        f.write("| Dataset | Original Segments | Windowed/Augmented | Total |\n")
+        f.write("| Dataset | Original Segments | Windowed Segments | Total |\n")
         f.write("|---------|-------------------|-------------------|-------|\n")
-        f.write(f"| Patients | {original_patient_count} (original) | {augmented_patient_count} (augmented) | {len(stats['patients_segments'])} |\n")
-        f.write(f"| ICBHI | - | - | {len(stats['icbhi_segments'])} |\n\n")
+        f.write(f"| Patients | {stats['patients_original_count']} | {stats['patients_windowed_count']} | {len(stats['patients_segments'])} |\n")
+        f.write(f"| ICBHI | {stats['icbhi_original_count']} | {stats['icbhi_windowed_count']} | {len(stats['icbhi_segments'])} |\n\n")
         f.write(f"**Total Pairs Analyzed:** {stats['matrix'].size:,}\n\n")
 
         # Overall statistics
@@ -660,11 +575,11 @@ def main():
 
     # Load healthy sounds from patients dataset
     print("\n[1/3] Loading healthy sounds from patients dataset...")
-    patients_segments = load_patients_healthy_sounds()
+    patients_segments, patients_original_count, patients_windowed_count = load_patients_healthy_sounds()
 
     # Load healthy sounds from ICBHI dataset
     print("\n[2/3] Loading healthy sounds from ICBHI dataset...")
-    icbhi_segments = load_icbhi_healthy_sounds()
+    icbhi_segments, icbhi_original_count, icbhi_windowed_count = load_icbhi_healthy_sounds()
 
     # Calculate cosine similarity
     print("\n[3/3] Calculating cosine similarity...")
@@ -678,6 +593,11 @@ def main():
 
     # Analyze and report results
     stats = analyze_similarity(similarity_matrix, patients_segs, icbhi_segs)
+    # Attach original and windowed counts for reporting
+    stats['patients_original_count'] = patients_original_count
+    stats['icbhi_original_count'] = icbhi_original_count
+    stats['patients_windowed_count'] = patients_windowed_count
+    stats['icbhi_windowed_count'] = icbhi_windowed_count
 
     # Generate comprehensive markdown report and CSV files
     generate_markdown_report(stats, 'reports')
