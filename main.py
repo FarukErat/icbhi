@@ -599,6 +599,17 @@ def generate_markdown_report(stats, output_dir='reports'):
             for seg in filtered_stats['outlier_segments']:
                 f.write(f"- File: {seg['file']}, Start: {seg['start']}s, End: {seg['end']}s, Avg Similarity: {seg.get('avg_similarity_to_icbhi', 'N/A')}\n")
             f.write("\n")
+        # Overall Statistics (Filtered)
+        filtered_values = [s for i, s in enumerate(stats['patients_avg']) if i not in filtered_stats['outlier_indices']]
+        if filtered_values:
+            f.write("## Overall Statistics (Filtered)\n\n")
+            f.write("| Metric | Value |\n")
+            f.write("|--------|-------|\n")
+            f.write(f"| Mean | {np.mean(filtered_values):.4f} |\n")
+            f.write(f"| Median | {np.median(filtered_values):.4f} |\n")
+            f.write(f"| Standard Deviation | {np.std(filtered_values):.4f} |\n")
+            f.write(f"| Minimum | {np.min(filtered_values):.4f} |\n")
+            f.write(f"| Maximum | {np.max(filtered_values):.4f} |\n\n")
 
         # Reference to CSV files
         f.write("## Data Files\n\n")
