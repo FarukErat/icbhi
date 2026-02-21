@@ -450,16 +450,16 @@ def analyze_similarity(similarity_matrix, patients_segments, icbhi_segments):
 
 def calculate_filtered_mean_similarity(similarities, segments=None):
     """
-    Calculate mean similarity after removing outliers using IQR method.
-    Returns filtered mean, original mean, lower threshold, upper threshold, filtered count, original count, and optionally the indices and segments of outliers.
+    Calculate mean similarity after removing low outliers using IQR method.
+    Only segments below the lower threshold are discarded; maximum values are retained.
+    Returns filtered mean, original mean, lower threshold, filtered count, original count, and optionally the indices and segments of outliers.
     """
     similarities = np.array(similarities)
     q1 = np.percentile(similarities, 25)
     q3 = np.percentile(similarities, 75)
     iqr = q3 - q1
     lower = q1 - 1.5 * iqr
-    upper = q3 + 1.5 * iqr
-    mask = (similarities >= lower) & (similarities <= upper)
+    mask = similarities >= lower
     filtered = similarities[mask]
     outlier_indices = np.where(~mask)[0]
     outlier_segments = [segments[i] for i in outlier_indices] if segments is not None else None
@@ -469,7 +469,6 @@ def calculate_filtered_mean_similarity(similarities, segments=None):
         'filtered_mean': filtered_mean,
         'original_mean': original_mean,
         'lower': lower,
-        'upper': upper,
         'filtered_count': len(filtered),
         'original_count': len(similarities),
         'outlier_indices': outlier_indices,
@@ -592,7 +591,7 @@ def generate_markdown_report(stats, output_dir='reports'):
         filtered_stats = calculate_filtered_mean_similarity(stats['patients_avg'], stats['patients_segments'])
         f.write(f"Mean similarity (filtered): {filtered_stats['filtered_mean']:.4f}\n")
         f.write(f"Original mean: {filtered_stats['original_mean']:.4f}\n")
-        f.write(f"Outlier threshold: <{filtered_stats['lower']:.4f} or >{filtered_stats['upper']:.4f}\n")
+        f.write(f"Outlier threshold: <{filtered_stats['lower']:.4f}\n")
         f.write(f"Filtered count: {filtered_stats['filtered_count']}, Original count: {filtered_stats['original_count']}\n\n")
         if filtered_stats['outlier_segments']:
             f.write("### Discarded Patient Segments (Outliers)\n\n")
@@ -601,6 +600,7 @@ def generate_markdown_report(stats, output_dir='reports'):
             f.write("\n")
         # Overall Statistics (Filtered)
         filtered_values = [s for i, s in enumerate(stats['patients_avg']) if i not in filtered_stats['outlier_indices']]
+        filtered_segments = [seg for i, seg in enumerate(stats['patients_segments']) if i not in filtered_stats['outlier_indices']]
         if filtered_values:
             f.write("## Overall Statistics (Filtered)\n\n")
             f.write("| Metric | Value |\n")
@@ -610,6 +610,91 @@ def generate_markdown_report(stats, output_dir='reports'):
             f.write(f"| Standard Deviation | {np.std(filtered_values):.4f} |\n")
             f.write(f"| Minimum | {np.min(filtered_values):.4f} |\n")
             f.write(f"| Maximum | {np.max(filtered_values):.4f} |\n\n")
+
+            # Patients Segments Statistics (Filtered)
+            f.write("## Patients Segments Statistics (Filtered)\n\n")
+            f.write("Average similarity of each filtered patient segment to all ICBHI segments:\n\n")
+            f.write("| Metric | Value |\n")
+            f.write("|--------|-------|\n")
+            f.write(f"| Mean | {np.mean(filtered_values):.4f} |\n")
+            f.write(f"| Min | {np.min(filtered_values):.4f} |\n")
+            f.write(f"| Max | {np.max(filtered_values):.4f} |\n\n")
+
+            # ICBHI Segments Statistics (Filtered)
+            filtered_matrix = stats['matrix'][[i for i in range(len(stats['patients_avg'])) if i not in filtered_stats['outlier_indices']], :]
+            filtered_icbhi_avg = np.mean(filtered_matrix, axis=0)
+            f.write("## ICBHI Segments Statistics (Filtered)\n\n")
+            f.write("Average similarity of each ICBHI segment to filtered patient segments:\n\n")
+            f.write("| Metric | Value |\n")
+            f.write("|--------|-------|\n")
+            f.write(f"| Mean | {np.mean(filtered_icbhi_avg):.4f} |\n")
+            f.write(f"| Min | {np.min(filtered_icbhi_avg):.4f} |\n")
+            f.write(f"| Max | {np.max(filtered_icbhi_avg):.4f} |\n\n")
+
+            # Similarity Distribution (Filtered)
+            f.write("## Similarity Distribution (Filtered)\n\n")
+            f.write("| Range | Count | Percentage |\n")
+            f.write("|-------|-------|------------|\n")
+            ranges = [(0, 0.25), (0.25, 0.5), (0.5, 0.75), (0.75, 1.0)]
+            for low, high in ranges:
+                count = np.sum((filtered_matrix >= low) & (filtered_matrix < high))
+                percentage = count / filtered_matrix.size * 100
+                f.write(f"| [{low:.2f}, {high:.2f}) | {count:,} | {percentage:.2f}% |\n")
+            f.write("\n")
+
+            # Least Similar Patient Segment (Filtered)
+            min_idx = np.argmin(filtered_values)
+            min_seg = filtered_segments[min_idx]
+            min_sim = filtered_values[min_idx]
+            f.write("## Least Similar Patient Segment (Filtered)\n\n")
+            f.write(f"The filtered patient segment causing the least similarity is:\n\n")
+            f.write(f"- File: {min_seg['file']}\n")
+            f.write(f"- Start: {min_seg['start']}s\n")
+            f.write(f"- End: {min_seg['end']}s\n")
+            f.write(f"- Average Similarity: {min_sim:.4f}\n\n")
+
+            # Highest Similarity Patient Segment (>=30 windows) (Filtered)
+            patient_window_counts = [seg.get('window_count', 1) for seg in filtered_segments]
+            valid_indices = [i for i, count in enumerate(patient_window_counts) if count >= 30]
+            if valid_indices:
+                max_valid_idx = valid_indices[np.argmax([filtered_values[i] for i in valid_indices])]
+                max_valid_seg = filtered_segments[max_valid_idx]
+                max_valid_sim = filtered_values[max_valid_idx]
+                f.write("## Highest Similarity Patient Segment (>=30 windows, Filtered)\n\n")
+                f.write(f"The filtered patient segment with at least 30 windows causing the highest similarity is:\n\n")
+                f.write(f"- File: {max_valid_seg['file']}\n")
+                f.write(f"- Start: {max_valid_seg['start']}s\n")
+                f.write(f"- End: {max_valid_seg['end']}s\n")
+                f.write(f"- Average Similarity: {max_valid_sim:.4f}\n\n")
+            else:
+                f.write("## Highest Similarity Patient Segment (>=30 windows, Filtered)\n\n")
+                f.write("No filtered patient segment with at least 30 windows found.\n\n")
+
+            # Highest Similarity Patient Segments (Total Windows >= 30) (Filtered)
+            sorted_indices = np.argsort(filtered_values)[::-1]
+            selected_indices = []
+            total_windows = 0
+            for idx in sorted_indices:
+                count = filtered_segments[idx].get('window_count', 1)
+                selected_indices.append(idx)
+                total_windows += count
+                if total_windows >= 30:
+                    break
+            if selected_indices:
+                selected_patients = [filtered_segments[i] for i in selected_indices]
+                selected_avg_sim = [filtered_values[i] for i in selected_indices]
+                selected_total_windows = sum([seg.get('window_count', 1) for seg in selected_patients])
+                selected_max_sim = max(selected_avg_sim)
+                selected_max_seg = selected_patients[selected_avg_sim.index(selected_max_sim)]
+                f.write("## Highest Similarity Patient Segments (Total Windows >= 30, Filtered)\n\n")
+                f.write("Selected filtered patient segments (by highest similarity) until total windows >= 30:\n\n")
+                for seg in selected_patients:
+                    f.write(f"- File: {seg['file']}, Start: {seg['start']}s, End: {seg['end']}s\n")
+                f.write(f"\nTotal windows: {selected_total_windows}\n")
+                f.write(f"Highest similarity among these: {selected_max_sim:.4f} (File: {selected_max_seg['file']}, Start: {selected_max_seg['start']}s, End: {selected_max_seg['end']}s)\n\n")
+            else:
+                f.write("## Highest Similarity Patient Segments (Total Windows >= 30, Filtered)\n\n")
+                f.write("No filtered patient segments found to reach at least 30 windows.\n\n")
 
         # Reference to CSV files
         f.write("## Data Files\n\n")
