@@ -242,25 +242,7 @@ Result: 5 windows from one 6-second segment
 
 ---
 
-### Step 4: Data Augmentation (Increasing Patient Samples)
-
-With only 50 patient windows vs 5,489 ICBHI windows, we needed more patient samples for robust comparison. We applied **audio augmentation** to create variations of each patient window.
-
-**Augmentation techniques (5 variations per window):**
-
-1. **Pitch Shift Up** – Raises the pitch by 1-3 semitones (like a higher-pitched voice)
-2. **Pitch Shift Down** – Lowers the pitch by 1-3 semitones (like a deeper voice)
-3. **Time Stretch (Faster)** – Speeds up by 5-10% without changing pitch
-4. **Time Stretch (Slower)** – Slows down by 5-10% without changing pitch
-5. **Noise Addition** – Adds subtle white noise to simulate real-world recording conditions
-
-Each augmented version also gets a random volume adjustment (80-120% of original).
-
-**Result:** 50 original windows × 6 (1 original + 5 augmented) = **300 patient segments**
-
----
-
-### Step 5: Feature Extraction
+### Step 4: Feature Extraction
 
 Raw audio waveforms can't be directly compared. We need to convert each 2-second audio window into a **numerical fingerprint** (feature vector) that captures its acoustic characteristics.
 
@@ -284,7 +266,7 @@ Each audio window is now represented as a vector of 30 numbers, like:
 
 ---
 
-### Step 6: Calculating Cosine Similarity
+### Step 5: Calculating Cosine Similarity
 
 **What is Cosine Similarity?**
 
@@ -312,12 +294,12 @@ If these point in different directions → low similarity (~0.30)
 ```
 
 **What we calculated:**
-- Every patient window (300) compared to every ICBHI window (5,489)
-- Total comparisons: **300 × 5,489 = 1,646,700 pairs**
+- Every patient window compared to every ICBHI window
+- Total comparisons: **number of patient windows × number of ICBHI windows**
 
 ---
 
-### Step 7: Results
+### Step 6: Results
 
 #### Overall Similarity Statistics
 
@@ -363,8 +345,8 @@ The analysis generates the following files in the `reports/` folder:
 | `similarity_distribution.csv` | Distribution of similarity scores |
 | `patients_segments.csv` | All patient segments with their average similarity to ICBHI |
 | `icbhi_segments.csv` | All ICBHI segments with their average similarity to patients |
-| `all_pairs.csv` | All 1.6M similarity pairs (sorted by similarity) |
-| `all_pairs_original_only.csv` | Pairs using only original (non-augmented) patient segments |
+| `all_pairs.csv` | All similarity pairs (sorted by similarity) |
+| `all_pairs_original_only.csv` | Pairs using only original patient segments |
 
 ---
 
@@ -395,8 +377,6 @@ You can modify these parameters in `main.py`:
 WINDOW_LENGTH = 2.0          # Window size in seconds
 WINDOW_OVERLAP = 0.5         # 50% overlap between windows
 MIN_SEGMENT_LENGTH = 0.5     # Minimum segment length to process
-ENABLE_AUGMENTATION = True   # Enable/disable data augmentation
-AUGMENTATION_MULTIPLIER = 5  # Number of augmented versions per segment
 SAMPLE_RATE = 22050          # Audio sample rate in Hz
 ```
 
@@ -405,4 +385,3 @@ SAMPLE_RATE = 22050          # Audio sample rate in Hz
 ### Conclusion
 
 The cosine similarity analysis shows that **healthy respiratory sounds from our patients dataset are highly similar to healthy sounds in the ICBHI reference database**, with ~90% of comparisons yielding similarity scores above 0.75. This validates that our patient recordings are consistent with established respiratory sound datasets and suitable for further analysis or machine learning applications.
-

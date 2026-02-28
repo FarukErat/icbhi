@@ -4,7 +4,6 @@ Compares healthy sounds from patients dataset vs ICBHI dataset
 
 Features:
 - Fixed-length windowing: Splits divergent-length segments into consistent windows
-- Data augmentation: Augments patient segments (pitch shift, time stretch, noise)
 - Overlap sliding windows: Extracts more samples from longer segments
 """
 
@@ -25,14 +24,10 @@ PATIENTS_DIAGNOSES_DIR = "patients/diagnoses"
 ICBHI_DIR = "ICBHI_final_database"
 SAMPLE_RATE = 22050  # Standard sample rate for audio processing
 
-# Windowing and augmentation configuration
+# Windowing configuration
 WINDOW_LENGTH = 2.0  # Fixed window length in seconds (matches ICBHI median)
 WINDOW_OVERLAP = 0.0  # 0% overlap for sliding windows
 MIN_SEGMENT_LENGTH = 0.5  # Minimum segment length to process (seconds)
-
-# Augmentation settings for patients dataset
-ENABLE_AUGMENTATION = False  # Disable data augmentation
-AUGMENTATION_MULTIPLIER = 0  # No augmentation
 
 
 def extract_audio_features(audio_segment, sr=SAMPLE_RATE):
@@ -109,7 +104,6 @@ def load_patients_healthy_sounds():
     Healthy sounds are those tagged with 'normal' in the diagnosis CSV files.
 
     Applies fixed-length windowing to handle divergent segment lengths.
-    Data augmentation is disabled.
     """
     healthy_segments = []
     original_count = 0
@@ -120,7 +114,6 @@ def load_patients_healthy_sounds():
 
     print(f"Found {len(wav_files)} patient audio files")
     print(f"Window length: {WINDOW_LENGTH}s, Overlap: {WINDOW_OVERLAP*100:.0f}%")
-    print(f"Augmentation: {'Enabled' if ENABLE_AUGMENTATION else 'Disabled'} (x{AUGMENTATION_MULTIPLIER})")
 
     for wav_path in tqdm(wav_files, desc="Processing patients", unit="file"):
         file_id = os.path.basename(wav_path).replace('.wav', '')
@@ -188,8 +181,6 @@ def load_patients_healthy_sounds():
                                     'original_start': orig_start,
                                     'original_end': orig_end,
                                     'original_duration': original_duration,
-                                    'augmented': False,
-                                    'augmentation_type': 'original',
                                     'features': features
                                 })
             except Exception as e:
@@ -357,8 +348,6 @@ def analyze_similarity(similarity_matrix, patients_segments, icbhi_segments):
             'patient_start': patient_seg['start'],
             'patient_end': patient_seg['end'],
             'patient_original_duration': patient_seg.get('original_duration', patient_seg['end'] - patient_seg['start']),
-            'patient_augmented': patient_seg.get('augmented', False),
-            'patient_augmentation_type': patient_seg.get('augmentation_type', 'original'),
             'icbhi_file': icbhi_seg['file'],
             'icbhi_start': icbhi_seg['start'],
             'icbhi_end': icbhi_seg['end'],
@@ -368,7 +357,7 @@ def analyze_similarity(similarity_matrix, patients_segments, icbhi_segments):
 
     # Print top 5 to console (original segments only)
     print(f"\nTop 5 Most Similar Pairs (original segments only):")
-    original_pairs = [p for p in all_pairs if not p['patient_augmented']]
+    original_pairs = [p for p in all_pairs if not p.get('patient_augmented', False)]
     for idx, pair in enumerate(original_pairs[:5]):
         print(f"  {idx+1}. Similarity: {pair['similarity']:.4f}")
         print(f"     Patients: {pair['patient_file']} [{pair['patient_start']:.2f}s - {pair['patient_end']:.2f}s]")
@@ -482,10 +471,6 @@ def generate_markdown_report(stats, output_dir='reports'):
     """
     os.makedirs(output_dir, exist_ok=True)
 
-    # Count original vs augmented segments
-    original_patient_count = sum(1 for s in stats['patients_segments'] if not s.get('augmented', False))
-    augmented_patient_count = sum(1 for s in stats['patients_segments'] if s.get('augmented', False))
-
     # Generate summary markdown report
     report_file = os.path.join(output_dir, 'report.md')
     with open(report_file, 'w') as f:
@@ -500,8 +485,6 @@ def generate_markdown_report(stats, output_dir='reports'):
         f.write(f"| Window Length | {WINDOW_LENGTH}s |\n")
         f.write(f"| Window Overlap | {WINDOW_OVERLAP*100:.0f}% |\n")
         f.write(f"| Min Segment Length | {MIN_SEGMENT_LENGTH}s |\n")
-        f.write(f"| Augmentation Enabled | {'Yes' if ENABLE_AUGMENTATION else 'No'} |\n")
-        f.write(f"| Augmentation Multiplier | {AUGMENTATION_MULTIPLIER}x |\n")
         f.write(f"| Sample Rate | {SAMPLE_RATE} Hz |\n\n")
 
         # Dataset summary
@@ -716,15 +699,13 @@ def generate_markdown_report(stats, output_dir='reports'):
     summary_df = pd.DataFrame({
         'Metric': ['Mean Similarity', 'Median Similarity', 'Standard Deviation',
                    'Minimum Similarity', 'Maximum Similarity',
-                   'Patients Segments Count (Total)', 'Patients Segments Count (Original)',
-                   'Patients Segments Count (Augmented)', 'ICBHI Segments Count', 'Total Pairs',
-                   'Window Length (s)', 'Window Overlap (%)', 'Augmentation Multiplier'],
+                   'Patients Segments Count (Total)', 'ICBHI Segments Count', 'Total Pairs',
+                   'Window Length (s)', 'Window Overlap (%)'],
         'Value': [stats['mean'], stats['median'], stats['std'],
                   stats['min'], stats['max'],
-                  len(stats['patients_segments']), original_patient_count,
-                  augmented_patient_count, len(stats['icbhi_segments']),
+                  len(stats['patients_segments']), len(stats['icbhi_segments']),
                   stats['matrix'].size,
-                  WINDOW_LENGTH, WINDOW_OVERLAP * 100, AUGMENTATION_MULTIPLIER]
+                  WINDOW_LENGTH, WINDOW_OVERLAP * 100]
     })
     summary_df.to_csv(summary_csv, index=False)
     print(f"Summary statistics saved to '{summary_csv}'")
@@ -735,7 +716,7 @@ def generate_markdown_report(stats, output_dir='reports'):
     dist_df.to_csv(dist_csv, index=False)
     print(f"Distribution saved to '{dist_csv}'")
 
-    # Save patients segments CSV with augmentation info
+    # Save patients segments CSV (no augmentation info)
     patients_csv = os.path.join(output_dir, 'patients_segments.csv')
     patients_data = []
     for i, seg in enumerate(stats['patients_segments']):
@@ -746,15 +727,13 @@ def generate_markdown_report(stats, output_dir='reports'):
             'original_start': seg.get('original_start', seg['start']),
             'original_end': seg.get('original_end', seg['end']),
             'original_duration': seg.get('original_duration', seg['end'] - seg['start']),
-            'augmented': seg.get('augmented', False),
-            'augmentation_type': seg.get('augmentation_type', 'original'),
             'avg_similarity_to_icbhi': stats['patients_avg'][i]
         })
     patients_df = pd.DataFrame(patients_data)
     patients_df.to_csv(patients_csv, index=False)
     print(f"Patients segments saved to '{patients_csv}'")
 
-    # Save ICBHI segments CSV with original duration info
+    # Save ICBHI segments CSV
     icbhi_csv = os.path.join(output_dir, 'icbhi_segments.csv')
     icbhi_data = []
     for i, seg in enumerate(stats['icbhi_segments']):
