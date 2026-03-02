@@ -1,9 +1,11 @@
 Metric,Value
-Mean Similarity,0.8937209759797067
-Median Similarity,0.899173901609045
-Standard Deviation,0.05283067105945449
-Minimum Similarity,0.45877108707779946
-Maximum Similarity,0.9966152605683667
-Patients Segments Count,19.0
-ICBHI Segments Count,3642.0
-Total Pairs,69198.0
+Mean Similarity,0.8924161752227043
+Median Similarity,0.9089486041310668
+Standard Deviation,0.07293291717409779
+Minimum Similarity,0.4962123027303749
+Maximum Similarity,0.9976275403830598
+Patients Segments Count (Total),33.0
+ICBHI Segments Count,4114.0
+Total Pairs,135762.0
+Window Length (s),2.0
+Window Overlap (%),0.0
