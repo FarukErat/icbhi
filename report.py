@@ -6,10 +6,10 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
-from calculation import SAMPLE_RATE, MAX_ICBHI_DURATION, MAX_PATIENT_DURATION
+from calculation import SAMPLE_RATE, MAX_ICBHI_DURATION, MAX_PATIENT_DURATION, ALGORITHMS
 
 REPORT_PATH = "report.md"
-CSV_PATH = "report.csv"
+CSV_PATH    = "report.csv"
 
 DIST_BUCKETS = [(0.0, 0.25), (0.25, 0.5), (0.5, 0.75), (0.75, 1.0)]
 TOP_N = 5
@@ -22,38 +22,81 @@ def _table(headers: list[str], rows: list[list]) -> str:
     return "\n".join([header_row, sep_row] + data_rows)
 
 
-def _build_report(sim: np.ndarray, icbhi_meta: list[dict], patient_meta: list[dict]) -> str:
-    n_icbhi, n_patient = sim.shape
-    avg_icbhi   = np.mean(sim, axis=1)
-    avg_patient = np.mean(sim, axis=0)
+def _stats_table(sim: np.ndarray) -> str:
+    return _table(
+        ["Metric", "Value"],
+        [
+            ["Mean",   f"{np.mean(sim):.4f}"],
+            ["Median", f"{np.median(sim):.4f}"],
+            ["Std",    f"{np.std(sim):.4f}"],
+            ["Min",    f"{np.min(sim):.4f}"],
+            ["Max",    f"{np.max(sim):.4f}"],
+        ],
+    )
 
-    diag_counts = Counter(m["diagnosis"] for m in patient_meta)
 
+def _dist_table(sim: np.ndarray) -> str:
     flat = sim.ravel()
-    dist_rows = []
+    rows = []
     for lo, hi in DIST_BUCKETS:
         count = int(np.sum((flat >= lo) & (flat < hi)))
-        dist_rows.append([f"[{lo:.2f}, {hi:.2f})", f"{count:,}", f"{count / flat.size * 100:.2f}%"])
+        rows.append([f"[{lo:.2f}, {hi:.2f})", f"{count:,}", f"{count / flat.size * 100:.2f}%"])
+    return _table(["Range", "Pairs", "Percentage"], rows)
 
+
+def _pair_rows(sim: np.ndarray, icbhi_meta: list[dict], patient_meta: list[dict],
+               flat_indices: np.ndarray, n: int) -> list[list]:
+    rows = []
+    for fi in flat_indices[:n]:
+        i, j = np.unravel_index(fi, sim.shape)
+        im, pm = icbhi_meta[i], patient_meta[j]
+        rows.append([
+            f"{sim[i, j]:.4f}",
+            im["file"][:12] + "…",
+            f"{im['start']:.2f}s–{im['end']:.2f}s",
+            pm["file"][:12] + "…",
+            f"{pm['start']:.2f}s–{pm['end']:.2f}s",
+            pm.get("diagnosis", "—"),
+        ])
+    return rows
+
+
+PAIR_HEADERS = ["Similarity", "ICBHI file", "ICBHI window", "Patient file", "Patient window", "Diagnosis"]
+
+
+def _algorithm_section(algo: str, description: str, sim: np.ndarray,
+                        icbhi_meta: list[dict], patient_meta: list[dict]) -> list[str]:
+    flat      = sim.ravel()
     flat_desc = np.argsort(flat)[::-1]
     flat_asc  = flat_desc[::-1]
+    n_icbhi, n_patient = sim.shape
 
-    def pair_rows(flat_indices: np.ndarray, n: int) -> list[list]:
-        rows = []
-        for fi in tqdm(flat_indices[:n], desc="Ranking pairs", leave=False, unit="pair"):
-            i, j = np.unravel_index(fi, sim.shape)
-            icbhi_m, patient_m = icbhi_meta[i], patient_meta[j]
-            rows.append([
-                f"{sim[i, j]:.4f}",
-                icbhi_m["file"][:12] + "…",
-                f"{icbhi_m['start']:.2f}s – {icbhi_m['end']:.2f}s",
-                patient_m["file"][:12] + "…",
-                f"{patient_m['start']:.2f}s – {patient_m['end']:.2f}s",
-                patient_m.get("diagnosis", "—"),
-            ])
-        return rows
+    return [
+        f"### {algo} — {description}",
+        "",
+        f"Pairs: **{sim.size:,}** ({n_icbhi:,} icbhi × {n_patient:,} patient)",
+        "",
+        _stats_table(sim),
+        "",
+        _dist_table(sim),
+        "",
+        f"**Top {TOP_N} most similar**",
+        "",
+        _table(PAIR_HEADERS, _pair_rows(sim, icbhi_meta, patient_meta, flat_desc, TOP_N)),
+        "",
+        f"**Top {TOP_N} least similar**",
+        "",
+        _table(PAIR_HEADERS, _pair_rows(sim, icbhi_meta, patient_meta, flat_asc, TOP_N)),
+        "",
+    ]
 
-    pair_headers = ["Similarity", "ICBHI file", "ICBHI window", "Patient file", "Patient window", "Diagnosis"]
+
+def _build_report(sim_matrices: dict[str, np.ndarray],
+                  icbhi_meta: list[dict], patient_meta: list[dict],
+                  md5_matches: int) -> str:
+    n_icbhi   = len(icbhi_meta)
+    n_patient = len(patient_meta)
+    diag_counts = Counter(m["diagnosis"] for m in patient_meta)
 
     lines = [
         "# Respiratory Sound Similarity Report",
@@ -68,9 +111,8 @@ def _build_report(sim: np.ndarray, icbhi_meta: list[dict], patient_meta: list[di
             [
                 ["Sample rate", f"{SAMPLE_RATE} Hz"],
                 ["ICBHI healthy max chunk duration", f"{MAX_ICBHI_DURATION} s"],
-                ["Patient ill max chunk duration", f"{MAX_PATIENT_DURATION} s"],
-                ["Feature vector length", "30 (13 MFCC mean + 13 MFCC std + 4 spectral)"],
-                ["Similarity metric", "Cosine similarity"],
+                ["Patient ill max chunk duration",   f"{MAX_PATIENT_DURATION} s"],
+                ["Algorithms", ", ".join(ALGORITHMS.keys()) + ", md5"],
             ],
         ),
         "",
@@ -81,8 +123,8 @@ def _build_report(sim: np.ndarray, icbhi_meta: list[dict], patient_meta: list[di
         _table(
             ["Dataset", "Description", "Chunks"],
             [
-                ["ICBHI healthy", "crackle=0, wheeze=0", f"{n_icbhi:,}"],
-                ["Patient ill",   "ral / ronkus / acilma", f"{n_patient:,}"],
+                ["ICBHI healthy", "crackle=0, wheeze=0",    f"{n_icbhi:,}"],
+                ["Patient ill",   "ral / ronkus / acilma",  f"{n_patient:,}"],
             ],
         ),
         "",
@@ -95,98 +137,55 @@ def _build_report(sim: np.ndarray, icbhi_meta: list[dict], patient_meta: list[di
         "",
         "---",
         "",
-        "## Overall Similarity Statistics",
+        "## MD5 Hash — Exact / Re-encoded Duplicate Check",
         "",
-        f"Total pairs compared: **{sim.size:,}** ({n_icbhi:,} icbhi × {n_patient:,} patient)",
-        "",
-        _table(
-            ["Metric", "Value"],
-            [
-                ["Mean",   f"{np.mean(sim):.4f}"],
-                ["Median", f"{np.median(sim):.4f}"],
-                ["Std",    f"{np.std(sim):.4f}"],
-                ["Min",    f"{np.min(sim):.4f}"],
-                ["Max",    f"{np.max(sim):.4f}"],
-            ],
-        ),
+        f"Exact duplicate chunks found: **{md5_matches}**",
         "",
         "---",
         "",
-        "## Per-Chunk Average Similarity",
+        "## Algorithm Results",
         "",
-        "### ICBHI healthy — avg similarity to all patient ill chunks",
-        "",
-        _table(
-            ["Metric", "Value"],
-            [
-                ["Mean",   f"{np.mean(avg_icbhi):.4f}"],
-                ["Median", f"{np.median(avg_icbhi):.4f}"],
-                ["Min",    f"{np.min(avg_icbhi):.4f}"],
-                ["Max",    f"{np.max(avg_icbhi):.4f}"],
-            ],
-        ),
-        "",
-        "### Patient ill — avg similarity to all ICBHI healthy chunks",
-        "",
-        _table(
-            ["Metric", "Value"],
-            [
-                ["Mean",   f"{np.mean(avg_patient):.4f}"],
-                ["Median", f"{np.median(avg_patient):.4f}"],
-                ["Min",    f"{np.min(avg_patient):.4f}"],
-                ["Max",    f"{np.max(avg_patient):.4f}"],
-            ],
-        ),
-        "",
-        "---",
-        "",
-        "## Similarity Distribution",
-        "",
-        _table(["Range", "Pairs", "Percentage"], dist_rows),
-        "",
-        "---",
-        "",
-        f"## Top {TOP_N} Most Similar Pairs",
-        "",
-        _table(pair_headers, pair_rows(flat_desc, TOP_N)),
-        "",
-        f"## Top {TOP_N} Least Similar Pairs",
-        "",
-        _table(pair_headers, pair_rows(flat_asc, TOP_N)),
-        "",
-        "---",
-        "",
-        "*Report generated by `report.py`.*",
     ]
 
+    for algo, description in ALGORITHMS.items():
+        lines += _algorithm_section(algo, description, sim_matrices[algo], icbhi_meta, patient_meta)
+        lines += ["---", ""]
+
+    lines += ["*Report generated by `report.py`.*"]
     return "\n".join(lines) + "\n"
 
 
-def _write_csv(sim: np.ndarray, icbhi_meta: list[dict], patient_meta: list[dict]) -> None:
-    n_icbhi, n_patient = sim.shape
+def _write_csv(sim_matrices: dict[str, np.ndarray],
+               icbhi_meta: list[dict], patient_meta: list[dict]) -> None:
+    n_icbhi, n_patient = next(iter(sim_matrices.values())).shape
     ii, pi = np.meshgrid(np.arange(n_icbhi), np.arange(n_patient), indexing="ij")
     ii, pi = ii.ravel(), pi.ravel()
 
-    rows = {
-        "icbhi_file":       [icbhi_meta[i]["file"]            for i in tqdm(ii, desc="Building CSV", unit="pair")],
-        "icbhi_start":      [icbhi_meta[i]["start"]           for i in ii],
-        "icbhi_end":        [icbhi_meta[i]["end"]             for i in ii],
-        "patient_file":     [patient_meta[j]["file"]          for j in pi],
-        "patient_start":    [patient_meta[j]["start"]         for j in pi],
-        "patient_end":      [patient_meta[j]["end"]           for j in pi],
-        "patient_diagnosis":[patient_meta[j].get("diagnosis", "") for j in pi],
-        "similarity":       sim.ravel(),
+    rows: dict[str, list] = {
+        "icbhi_file":        [icbhi_meta[i]["file"]              for i in tqdm(ii, desc="Building CSV", unit="pair")],
+        "icbhi_start":       [icbhi_meta[i]["start"]             for i in ii],
+        "icbhi_end":         [icbhi_meta[i]["end"]               for i in ii],
+        "patient_file":      [patient_meta[j]["file"]            for j in pi],
+        "patient_start":     [patient_meta[j]["start"]           for j in pi],
+        "patient_end":       [patient_meta[j]["end"]             for j in pi],
+        "patient_diagnosis": [patient_meta[j].get("diagnosis", "") for j in pi],
+        "md5_match":         [int(icbhi_meta[i]["md5"] == patient_meta[j]["md5"])
+                              for i, j in zip(ii, pi)],
     }
+    for algo in sim_matrices:
+        rows[f"sim_{algo}"] = sim_matrices[algo].ravel()
 
     pd.DataFrame(rows).to_csv(CSV_PATH, index=False)
     print(f"  Saved → {CSV_PATH}")
 
 
-def generate_report(sim: np.ndarray, icbhi_meta: list[dict], patient_meta: list[dict]) -> None:
-    """Write report.md and report.csv from an already-computed similarity matrix and metadata."""
+def generate_report(sim_matrices: dict[str, np.ndarray],
+                    icbhi_meta: list[dict], patient_meta: list[dict],
+                    md5_matches: int) -> None:
+    """Write report.md and report.csv from computed similarity matrices and metadata."""
     print("=== Writing report ===")
-    text = _build_report(sim, icbhi_meta, patient_meta)
+    text = _build_report(sim_matrices, icbhi_meta, patient_meta, md5_matches)
     with open(REPORT_PATH, "w") as f:
         f.write(text)
     print(f"  Saved → {REPORT_PATH}")
-    _write_csv(sim, icbhi_meta, patient_meta)
+    _write_csv(sim_matrices, icbhi_meta, patient_meta)

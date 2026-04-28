@@ -7,10 +7,13 @@ import pandas as pd
 from sklearn.metrics.pairwise import cosine_similarity
 from tqdm import tqdm
 
-from calculation import extract_features, SAMPLE_RATE, MAX_ICBHI_DURATION, MAX_PATIENT_DURATION
+from calculation import (
+    extract_all_features, md5_fingerprint,
+    SAMPLE_RATE, MAX_ICBHI_DURATION, MAX_PATIENT_DURATION, ALGORITHMS,
+)
 from report import generate_report
 
-ICBHI_DIR = "ICBHI_final_database"
+ICBHI_DIR    = "ICBHI_final_database"
 PATIENTS_DIR = "patients"
 DIAGNOSES_DIR = os.path.join(PATIENTS_DIR, "diagnoses")
 
@@ -26,14 +29,14 @@ def split_audio(audio: np.ndarray, sr: int, max_duration: float) -> list[tuple[n
     return result
 
 
-def load_icbhi_healthy() -> tuple[np.ndarray, list[dict]]:
+def load_icbhi_healthy() -> tuple[dict[str, np.ndarray], list[dict]]:
     """
     ICBHI segments where crackles=0 and wheezes=0, chopped to MAX_ICBHI_DURATION.
-    Returns (feature_matrix, metadata_list).
-    metadata keys: file, start, end
+    Returns (features_by_algorithm, metadata_list).
+    metadata keys: file, start, end, md5
     """
     txt_files = glob.glob(os.path.join(ICBHI_DIR, "*.txt"))
-    features: list[np.ndarray] = []
+    features: dict[str, list] = {algo: [] for algo in ALGORITHMS}
     meta: list[dict] = []
 
     for txt_path in tqdm(txt_files, desc="ICBHI healthy", unit="file"):
@@ -61,21 +64,28 @@ def load_icbhi_healthy() -> tuple[np.ndarray, list[dict]]:
         for seg_start, seg_end in healthy_slices:
             segment = audio[int(seg_start * sr):int(seg_end * sr)]
             for chunk, c_start, c_end in split_audio(segment, sr, MAX_ICBHI_DURATION):
-                features.append(extract_features(chunk, sr))
-                meta.append({"file": file_id, "start": seg_start + c_start, "end": seg_start + c_end})
+                chunk_features = extract_all_features(chunk, sr)
+                for algo in ALGORITHMS:
+                    features[algo].append(chunk_features[algo])
+                meta.append({
+                    "file":  file_id,
+                    "start": seg_start + c_start,
+                    "end":   seg_start + c_end,
+                    "md5":   md5_fingerprint(chunk),
+                })
 
-    return np.array(features), meta
+    return {algo: np.array(vecs) for algo, vecs in features.items()}, meta
 
 
-def load_patient_ill() -> tuple[np.ndarray, list[dict]]:
+def load_patient_ill() -> tuple[dict[str, np.ndarray], list[dict]]:
     """
     Patient segments whose diagnosis is not 'normal', chopped to MAX_PATIENT_DURATION.
     Segments from both doctors are deduplicated by (start, end).
-    Returns (feature_matrix, metadata_list).
-    metadata keys: file, start, end, diagnosis
+    Returns (features_by_algorithm, metadata_list).
+    metadata keys: file, start, end, diagnosis, md5
     """
     wav_files = glob.glob(os.path.join(PATIENTS_DIR, "*.wav"))
-    features: list[np.ndarray] = []
+    features: dict[str, list] = {algo: [] for algo in ALGORITHMS}
     meta: list[dict] = []
 
     for wav_path in tqdm(wav_files, desc="Patient ill", unit="file"):
@@ -112,36 +122,47 @@ def load_patient_ill() -> tuple[np.ndarray, list[dict]]:
         for seg_start, seg_end, diagnosis in ill_slices:
             segment = audio[int(seg_start * sr):int(seg_end * sr)]
             for chunk, c_start, c_end in split_audio(segment, sr, MAX_PATIENT_DURATION):
-                features.append(extract_features(chunk, sr))
-                meta.append({"file": file_id, "start": seg_start + c_start, "end": seg_start + c_end, "diagnosis": diagnosis})
+                chunk_features = extract_all_features(chunk, sr)
+                for algo in ALGORITHMS:
+                    features[algo].append(chunk_features[algo])
+                meta.append({
+                    "file":      file_id,
+                    "start":     seg_start + c_start,
+                    "end":       seg_start + c_end,
+                    "diagnosis": diagnosis,
+                    "md5":       md5_fingerprint(chunk),
+                })
 
-    return np.array(features), meta
+    return {algo: np.array(vecs) for algo, vecs in features.items()}, meta
 
 
 def main() -> None:
     print("=== Loading ICBHI healthy segments ===")
     icbhi_features, icbhi_meta = load_icbhi_healthy()
-    print(f"  {len(icbhi_features)} feature vectors\n")
+    print(f"  {len(icbhi_meta)} chunks\n")
 
     print("=== Loading patient ill segments ===")
     patient_features, patient_meta = load_patient_ill()
-    print(f"  {len(patient_features)} feature vectors\n")
+    print(f"  {len(patient_meta)} chunks\n")
 
-    if len(icbhi_features) == 0 or len(patient_features) == 0:
+    if len(icbhi_meta) == 0 or len(patient_meta) == 0:
         print("ERROR: one of the sets is empty — nothing to compare.")
         return
 
-    print("=== Computing pairwise cosine similarity ===")
-    sim = cosine_similarity(icbhi_features, patient_features)
+    print("=== Computing pairwise cosine similarity per algorithm ===")
+    sim_matrices: dict[str, np.ndarray] = {}
+    for algo in ALGORITHMS:
+        sim_matrices[algo] = cosine_similarity(icbhi_features[algo], patient_features[algo])
+        m = sim_matrices[algo]
+        print(f"  [{algo}]  mean={np.mean(m):.4f}  median={np.median(m):.4f}  "
+              f"std={np.std(m):.4f}  min={np.min(m):.4f}  max={np.max(m):.4f}")
 
-    print(f"\n  Pairs compared : {sim.size:,}  ({len(icbhi_features)} icbhi × {len(patient_features)} patient)")
-    print(f"  Mean           : {np.mean(sim):.4f}")
-    print(f"  Median         : {np.median(sim):.4f}")
-    print(f"  Std            : {np.std(sim):.4f}")
-    print(f"  Min            : {np.min(sim):.4f}")
-    print(f"  Max            : {np.max(sim):.4f}")
+    icbhi_hashes   = {m["md5"] for m in icbhi_meta}
+    patient_hashes = {m["md5"] for m in patient_meta}
+    md5_matches = len(icbhi_hashes & patient_hashes)
+    print(f"\n  [md5]  exact duplicate chunks: {md5_matches}")
 
-    generate_report(sim, icbhi_meta, patient_meta)
+    generate_report(sim_matrices, icbhi_meta, patient_meta, md5_matches)
 
 
 if __name__ == "__main__":
